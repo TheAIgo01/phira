@@ -66,40 +66,54 @@ jobs:
         path: Phira-linux.zip
 
   # ========== Windows 构建 ==========
+  # ========== Windows 构建 ==========
   build-windows:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
 
-    # 安装 Rust MSVC 工具链
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
-    # 关键：下载 Windows 版 FFmpeg 静态库
+    # 修复：使用 GitHub 上的预编译 Windows 静态库（或自己编译）
     - name: Download FFmpeg Windows
       run: |
+        # 创建目录
         mkdir -p prpr-avc/static-lib/x86_64-pc-windows-msvc
         cd prpr-avc/static-lib/x86_64-pc-windows-msvc
-        # 使用 gyan.dev 的 Windows 静态库（官方推荐）
-        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z" -OutFile "ffmpeg.7z"
-        7z x ffmpeg.7z -y
-        # 移动 .lib 文件到正确位置
-        $libPath = Get-ChildItem -Path . -Filter "*.lib" -Recurse | Select-Object -First 1
-        Copy-Item $libPath.DirectoryName\*.lib .
+        
+        # 下载 BtbN 的 Windows 静态库构建（更可靠）
+        Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile "ffmpeg.zip"
+        Expand-Archive -Path "ffmpeg.zip" -DestinationPath "." -Force
+        
+        # 找到 lib 目录并复制文件（修复语法错误）
+        $libDir = Get-ChildItem -Path "." -Filter "lib" -Directory -Recurse | Select-Object -First 1
+        if ($libDir) {
+          Copy-Item "$($libDir.FullName)\*.lib" "." -Force
+          Write-Host "Found and copied .lib files"
+        } else {
+          Write-Host "Warning: No lib directory found"
+        }
+        
+        # 同时复制 dll 到输出目录（运行时需要）
+        $binDir = Get-ChildItem -Path "." -Filter "bin" -Directory -Recurse | Select-Object -First 1
+        if ($binDir) {
+          Copy-Item "$($binDir.FullName)\*.dll" "." -Force
+        }
       shell: pwsh
 
     - name: Build
       run: cargo build --release --bin phira-main
-      shell: cmd
 
     - name: Package
       run: |
         mkdir Phira-windows
-        xcopy assets Phira-windows\assets\ /E /I
+        xcopy assets Phira-windows\assets\ /E /I /Q
         copy target\release\phira-main.exe Phira-windows\
-        # 复制 FFmpeg DLL（Windows 需要运行时库）
-        copy prpr-avc\static-lib\x86_64-pc-windows-msvc\*.dll Phira-windows\ 2>nul || echo "No DLL to copy"
-        7z a Phira-windows.zip Phira-windows\
+        # 复制 FFmpeg DLL（运行时需要）
+        copy prpr-avc\static-lib\x86_64-pc-windows-msvc\*.dll Phira-windows\ 2>nul || echo "No DLL found"
+        # 压缩
+        7z a -tzip Phira-windows.zip Phira-windows\
       shell: cmd
 
     - name: Upload
