@@ -1,35 +1,72 @@
-name: Rust
+name: Build
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:  # 允许手动触发
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Download FFmpeg libs  # 这行必须有！
+    
+    # ===== 修改部分：自动编译 FFmpeg 静态库（替代失效的下载链接）=====
+    - name: Cache FFmpeg static libs
+      id: cache-ffmpeg
+      uses: actions/cache@v4
+      with:
+        path: prpr-avc/static-lib
+        key: ffmpeg-static-v1-${{ runner.os }}
+        
+    - name: Build FFmpeg static libs (first time only)
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
       run: |
-        wget https://teamflos.github.io/phira-docs/phira_build_guide/prpr-avc.zip
-        unzip prpr-avc.zip -d ./
-    - name: Install dependencies
+        sudo apt-get update
+        sudo apt-get install -y nasm yasm libtool automake autoconf cmake
+        mkdir -p /tmp/ffmpeg-build
+        cd /tmp
+        wget https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz
+        tar -xf ffmpeg-6.0.tar.xz
+        cd ffmpeg-6.0
+        ./configure \
+          --prefix=/tmp/ffmpeg-build \
+          --disable-programs \
+          --disable-doc \
+          --disable-debug \
+          --enable-static \
+          --disable-shared \
+          --enable-decoder='h264,aac,flac,mp3' \
+          --enable-demuxer='mov,mp3' \
+          --enable-protocol='file' \
+          --disable-everything \
+          --enable-swscale \
+          --enable-swresample
+        make -j$(nproc)
+        make install
+        mkdir -p $GITHUB_WORKSPACE/prpr-avc/static-lib/x86_64-unknown-linux-gnu
+        cp /tmp/ffmpeg-build/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/x86_64-unknown-linux-gnu/
+    # ============================================================
+    
+    - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      
     - name: Format
       run: cargo fmt --check
+      
     - name: Clippy
       run: cargo clippy -- -D warnings
+      
     - name: Tests
       run: cargo test
       
-    # ===== 新增：构建并上传产物 =====
     - name: Build Release
-      run: cargo build --release
+      run: cargo build --release --bin phira-main
       
     - name: Prepare files
       run: |
@@ -42,4 +79,4 @@ jobs:
       with:
         name: phira-linux
         path: artifact/
-    # ================================
+        retention-days: 7  # 保留7天
