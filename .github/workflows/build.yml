@@ -101,21 +101,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: aarch64-linux-android,armv7-linux-androideabi
+        
     - name: Setup NDK
       uses: nttld/setup-ndk@v1
       with:
         ndk-version: r27c
         link-to-sdk: true
-    
-    # 关键：安装 Android SDK 平台（cargo-apk 需要）
+        
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       
-    - name: Install Android Platform 30
+    - name: Install Android Platform
       run: |
         sdkmanager "platforms;android-30"
         sdkmanager "platforms;android-35"
@@ -124,6 +125,12 @@ jobs:
     - name: Install cargo-apk
       run: cargo install cargo-apk
       
+    # 关键：显式确保 target 已安装（保险）
+    - name: Ensure Rust Targets
+      run: |
+        rustup target add aarch64-linux-android
+        rustup target add armv7-linux-androideabi
+        
     - name: Cache FFmpeg Android
       id: cache-ffmpeg-android
       uses: actions/cache@v4
@@ -206,7 +213,7 @@ jobs:
         make -j$(nproc)
         make install
         cp /tmp/ffmpeg-android-armv7/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/armv7-linux-androideabi/
-        
+
     - name: Build APK
       run: |
         mkdir -p phira/assets
