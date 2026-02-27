@@ -71,7 +71,7 @@ jobs:
         name: Phira-linux
         path: Phira-linux.zip
 
-  # ========== Windows 构建 ==========
+  # ========== Windows 构建（修复版） ==========
   build-windows:
     runs-on: windows-latest
     steps:
@@ -80,26 +80,32 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgGitCommitId: 'a42af01b72c28a8e1d7b48107b33e4f286a55bc6'
+    # 修复：手动设置 vcpkg 而不使用 action（避免子模块问题）
+    - name: Setup vcpkg manually
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+        C:\vcpkg\bootstrap-vcpkg.bat
+        echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+        echo "PATH=C:\vcpkg;$env:PATH" >> $env:GITHUB_ENV
 
     - name: Install FFmpeg (vcpkg)
       run: |
         vcpkg install ffmpeg:x64-windows-static --triplet x64-windows-static
-        echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> $env:GITHUB_ENV
+      shell: pwsh
 
     - name: Build
       run: cargo build --release --bin phira-main
       env:
-        PKG_CONFIG_PATH: "${{ github.workspace }}/vcpkg/installed/x64-windows-static/lib/pkgconfig"
+        PKG_CONFIG_PATH: "C:\vcpkg\installed\x64-windows-static\lib\pkgconfig"
+        FFMPEG_DIR: "C:\vcpkg\installed\x64-windows-static"
 
     - name: Package
       run: |
         mkdir Phira-windows
         xcopy assets Phira-windows\assets\ /E /I /Q
         copy target\release\phira-main.exe Phira-windows\
+        # 复制运行时 DLL
+        copy C:\vcpkg\installed\x64-windows-static\bin\*.dll Phira-windows\ 2>nul || echo "No DLL to copy"
         7z a -tzip Phira-windows.zip Phira-windows\
 
     - name: Upload
@@ -108,7 +114,7 @@ jobs:
         name: Phira-windows
         path: Phira-windows.zip
 
-  # ========== Android APK 构建 ==========
+  # ========== Android 构建（修复版） ==========
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -133,8 +139,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: prpr-avc/static-lib
-        key: ffmpeg-android-v1
+        key: ffmpeg-android-v2
 
+    # 修复：添加 --enable-cross-compile 和 --cross-prefix
     - name: Build FFmpeg Android
       if: steps.cache-ffmpeg-android.outputs.cache-hit != 'true'
       run: |
@@ -153,7 +160,7 @@ jobs:
         tar -xf ffmpeg-6.0.tar.xz
         cd ffmpeg-6.0
         
-        # ARM64
+        # ARM64 - 添加交叉编译选项
         ./configure \
           --prefix=/tmp/ffmpeg-android-arm64 \
           --enable-static \
@@ -162,12 +169,16 @@ jobs:
           --disable-programs \
           --disable-debug \
           --disable-asm \
+          --enable-cross-compile \
           --target-os=android \
           --arch=arm64 \
           --cpu=armv8-a \
+          --cross-prefix=$TOOLCHAIN/bin/llvm- \
           --cc=$TOOLCHAIN/bin/aarch64-linux-android$API-clang \
           --cxx=$TOOLCHAIN/bin/aarch64-linux-android$API-clang++ \
           --sysroot=$TOOLCHAIN/sysroot \
+          --extra-cflags="-fPIC" \
+          --extra-ldflags="-Wl,--gc-sections" \
           --enable-decoder='h264,aac,flac,mp3' \
           --enable-demuxer='mov,mp3' \
           --enable-protocol='file' \
@@ -179,7 +190,7 @@ jobs:
         cp /tmp/ffmpeg-android-arm64/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/aarch64-linux-android/
         make clean
         
-        # ARMv7
+        # ARMv7 - 添加交叉编译选项
         ./configure \
           --prefix=/tmp/ffmpeg-android-armv7 \
           --enable-static \
@@ -188,12 +199,16 @@ jobs:
           --disable-programs \
           --disable-debug \
           --disable-asm \
+          --enable-cross-compile \
           --target-os=android \
           --arch=arm \
           --cpu=armv7-a \
+          --cross-prefix=$TOOLCHAIN/bin/llvm- \
           --cc=$TOOLCHAIN/bin/armv7a-linux-androideabi$API-clang \
           --cxx=$TOOLCHAIN/bin/armv7a-linux-androideabi$API-clang++ \
           --sysroot=$TOOLCHAIN/sysroot \
+          --extra-cflags="-fPIC" \
+          --extra-ldflags="-Wl,--gc-sections" \
           --enable-decoder='h264,aac,flac,mp3' \
           --enable-demuxer='mov,mp3' \
           --enable-protocol='file' \
@@ -204,10 +219,8 @@ jobs:
         make install
         cp /tmp/ffmpeg-android-armv7/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/armv7-linux-androideabi/
 
-    # 关键：使用 cargo-apk 构建 APK
     - name: Build APK
       run: |
-        # 确保 assets 存在（Android 需要）
         mkdir -p assets
         cargo apk build --release
         
