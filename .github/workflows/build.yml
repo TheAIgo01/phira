@@ -195,11 +195,13 @@ jobs:
         cp /tmp/ffmpeg-android-armv7/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/armv7-linux-androideabi/
     - name: Build APK
       run: |
-        mkdir -p assets
+        mkdir -p phira/assets
+        cp -r assets/* phira/assets/ 2>/dev/null || true
+        cd phira
         cargo apk build --release
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: Phira-android-apk
-        path: target/release/apk/*.apk
+        path: phira/target/release/apk/*.apk
         if-no-files-found: warn
