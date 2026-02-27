@@ -96,7 +96,6 @@ dotenv-build = "0.1"
 fluent = { workspace = true }
 fluent-syntax = { workspace = true }
 
-# ==================== 新增：Android APK 配置 ====================
 [package.metadata.android]
 # 应用信息
 package_name = "com.teamflos.phira"
@@ -121,7 +120,7 @@ name = "android.permission.READ_EXTERNAL_STORAGE"
 [[package.metadata.android.uses_permission]]
 name = "android.permission.WRITE_EXTERNAL_STORAGE"
 
-# 签名配置（debug 签名）
-[[package.metadata.android.signing.release]]
+# 签名配置（修正：去掉多余的数组括号，直接使用表）
+[package.metadata.android.signing.release]
 path = "~/.android/debug.keystore"
 keystore_password = "android"
