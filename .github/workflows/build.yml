@@ -110,14 +110,27 @@ jobs:
       with:
         ndk-version: r27c
         link-to-sdk: true
+    
+    # 关键：安装 Android SDK 平台（cargo-apk 需要）
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Install Android Platform 30
+      run: |
+        sdkmanager "platforms;android-30"
+        sdkmanager "platforms;android-35"
+        sdkmanager "build-tools;35.0.0"
+    
     - name: Install cargo-apk
       run: cargo install cargo-apk
+      
     - name: Cache FFmpeg Android
       id: cache-ffmpeg-android
       uses: actions/cache@v4
       with:
         path: prpr-avc/static-lib
         key: ffmpeg-android-v3
+        
     - name: Build FFmpeg Android
       if: steps.cache-ffmpeg-android.outputs.cache-hit != 'true'
       run: |
@@ -193,12 +206,14 @@ jobs:
         make -j$(nproc)
         make install
         cp /tmp/ffmpeg-android-armv7/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/armv7-linux-androideabi/
+        
     - name: Build APK
       run: |
         mkdir -p phira/assets
         cp -r assets/* phira/assets/ 2>/dev/null || true
         cd phira
         cargo apk build --release
+        
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
