@@ -1,0 +1,45 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download FFmpeg libs  # 这行必须有！
+      run: |
+        wget https://teamflos.github.io/phira-docs/phira_build_guide/prpr-avc.zip
+        unzip prpr-avc.zip -d ./
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+    - name: Format
+      run: cargo fmt --check
+    - name: Clippy
+      run: cargo clippy -- -D warnings
+    - name: Tests
+      run: cargo test
+      
+    # ===== 新增：构建并上传产物 =====
+    - name: Build Release
+      run: cargo build --release
+      
+    - name: Prepare files
+      run: |
+        mkdir -p artifact/assets
+        cp -r assets/* artifact/assets/ || true
+        cp target/release/phira-main artifact/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: phira-linux
+        path: artifact/
+    # ================================
