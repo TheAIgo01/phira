@@ -156,7 +156,7 @@ jobs:
         tar -xf ffmpeg-6.0.tar.xz
         cd ffmpeg-6.0
         
-        # ARM64
+        # ARM64 - 添加 --disable-vulkan 修复编译错误
         ./configure \
           --prefix=/tmp/ffmpeg-android-arm64 \
           --enable-static \
@@ -175,6 +175,9 @@ jobs:
           --sysroot=$TOOLCHAIN/sysroot \
           --extra-cflags="-fPIC" \
           --extra-ldflags="-Wl,--gc-sections" \
+          --disable-vulkan \          # ← 新增：禁用 Vulkan
+          --disable-v4l2-m2m \        # ← 新增：禁用 V4L2（Android不需要）
+          --disable-hwaccels \        # ← 新增：禁用所有硬件加速
           --enable-decoder='h264,aac,flac,mp3' \
           --enable-demuxer='mov,mp3' \
           --enable-protocol='file' \
@@ -186,7 +189,7 @@ jobs:
         cp /tmp/ffmpeg-android-arm64/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/aarch64-linux-android/
         make clean
         
-        # ARMv7
+        # ARMv7 - 同样添加禁用选项
         ./configure \
           --prefix=/tmp/ffmpeg-android-armv7 \
           --enable-static \
@@ -205,6 +208,9 @@ jobs:
           --sysroot=$TOOLCHAIN/sysroot \
           --extra-cflags="-fPIC" \
           --extra-ldflags="-Wl,--gc-sections" \
+          --disable-vulkan \          # ← 新增
+          --disable-v4l2-m2m \        # ← 新增
+          --disable-hwaccels \        # ← 新增
           --enable-decoder='h264,aac,flac,mp3' \
           --enable-demuxer='mov,mp3' \
           --enable-protocol='file' \
