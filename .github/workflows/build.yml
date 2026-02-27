@@ -214,6 +214,11 @@ jobs:
         make install
         cp /tmp/ffmpeg-android-armv7/lib/*.a $GITHUB_WORKSPACE/prpr-avc/static-lib/armv7-linux-androideabi/
 
+    - name: Generate Debug Keystore
+      run: |
+        mkdir -p ~/.android
+        keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        
     - name: Build APK
       run: |
         mkdir -p phira/assets
