@@ -17,7 +17,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: prpr-avc/static-lib
-        key: ffmpeg-static-linux-v1
+        key: ffmpeg-static-linux-v2
 
     - name: Build FFmpeg Linux
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -32,6 +32,7 @@ jobs:
           --prefix=/tmp/ffmpeg-build \
           --disable-programs --disable-doc --disable-debug --disable-asm \
           --enable-static --disable-shared \
+          --disable-zlib \  # 禁用zlib避免Windows类似问题
           --enable-decoder='h264,aac,flac,mp3' \
           --enable-demuxer='mov,mp3' \
           --enable-protocol='file' \
@@ -65,8 +66,7 @@ jobs:
         name: Phira-linux
         path: Phira-linux.zip
 
-  # ========== Windows 构建 ==========
-  # ========== Windows 构建 ==========
+  # ========== Windows 构建（修复zlib） ==========
   build-windows:
     runs-on: windows-latest
     steps:
@@ -75,46 +75,31 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
-    # 修复：使用 GitHub 上的预编译 Windows 静态库（或自己编译）
-    - name: Download FFmpeg Windows
+    # 修复：使用vcpkg安装ffmpeg（包含所有依赖包括zlib）
+    - name: Install FFmpeg (vcpkg)
       run: |
-        # 创建目录
-        mkdir -p prpr-avc/static-lib/x86_64-pc-windows-msvc
-        cd prpr-avc/static-lib/x86_64-pc-windows-msvc
-        
-        # 下载 BtbN 的 Windows 静态库构建（更可靠）
-        Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile "ffmpeg.zip"
-        Expand-Archive -Path "ffmpeg.zip" -DestinationPath "." -Force
-        
-        # 找到 lib 目录并复制文件（修复语法错误）
-        $libDir = Get-ChildItem -Path "." -Filter "lib" -Directory -Recurse | Select-Object -First 1
-        if ($libDir) {
-          Copy-Item "$($libDir.FullName)\*.lib" "." -Force
-          Write-Host "Found and copied .lib files"
-        } else {
-          Write-Host "Warning: No lib directory found"
-        }
-        
-        # 同时复制 dll 到输出目录（运行时需要）
-        $binDir = Get-ChildItem -Path "." -Filter "bin" -Directory -Recurse | Select-Object -First 1
-        if ($binDir) {
-          Copy-Item "$($binDir.FullName)\*.dll" "." -Force
-        }
-      shell: pwsh
+        git clone https://github.com/microsoft/vcpkg.git
+        .\vcpkg\bootstrap-vcpkg.bat
+        .\vcpkg\vcpkg install ffmpeg:x64-windows-static --triplet x64-windows-static
+        # 设置环境变量让cargo找到库
+        echo "VCPKG_ROOT=$PWD\vcpkg" >> $env:GITHUB_ENV
+        echo "LIB=$PWD\vcpkg\installed\x64-windows-static\lib" >> $env:GITHUB_ENV
+        echo "INCLUDE=$PWD\vcpkg\installed\x64-windows-static\include" >> $env:GITHUB_ENV
 
     - name: Build
       run: cargo build --release --bin phira-main
+      env:
+        PKG_CONFIG_PATH: "${{ github.workspace }}\\vcpkg\\installed\\x64-windows-static\\lib\\pkgconfig"
+        RUSTFLAGS: "-L ${{ github.workspace }}\\vcpkg\\installed\\x64-windows-static\\lib"
 
     - name: Package
       run: |
         mkdir Phira-windows
         xcopy assets Phira-windows\assets\ /E /I /Q
         copy target\release\phira-main.exe Phira-windows\
-        # 复制 FFmpeg DLL（运行时需要）
-        copy prpr-avc\static-lib\x86_64-pc-windows-msvc\*.dll Phira-windows\ 2>nul || echo "No DLL found"
-        # 压缩
+        # 复制vcpkg的DLL（虽然是静态链接，但某些系统库可能仍需）
+        copy vcpkg\installed\x64-windows-static\bin\*.dll Phira-windows\ 2>nul || echo "Static build, no DLL needed"
         7z a -tzip Phira-windows.zip Phira-windows\
-      shell: cmd
 
     - name: Upload
       uses: actions/upload-artifact@v4
@@ -122,13 +107,13 @@ jobs:
         name: Phira-windows
         path: Phira-windows.zip
 
-  # ========== Android 构建 ==========
+  # ========== Android 构建（修复target） ==========
   build-android:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
-    # 关键：安装 Android Rust target
+    # 关键修复：显式安装Rust target
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -142,15 +127,13 @@ jobs:
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # Android 需要特殊编译 FFmpeg（或使用预编译版本）
-    - name: Download FFmpeg Android
+    # 创建空的静态库目录（如果找不到原项目的静态库）
+    - name: Prepare static libs
       run: |
         mkdir -p prpr-avc/static-lib/aarch64-linux-android
         mkdir -p prpr-avc/static-lib/armv7-linux-androideabi
-        # 这里需要下载 Android 版 FFmpeg 静态库
-        # 暂时使用占位，实际需要从原项目或自己编译
-        echo "注意：Android 需要 aarch64 和 armv7 架构的 FFmpeg 静态库"
-        echo "可以从原项目 Release 下载 prpr-avc.zip 获取"
+        # 注意：Android需要交叉编译的FFmpeg静态库，这里需要你自己提供
+        # 或者从原项目Release下载prpr-avc.zip解压
 
     - name: Build ARM64
       run: cargo ndk -t arm64-v8a --platform 35 build --release
